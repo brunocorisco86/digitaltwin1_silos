@@ -3,7 +3,7 @@ from typing import Set, Dict, Optional
 import json
 
 from src.utils.data_loader import load_silo_data
-from src.data_model import SiloData, BatchOccurrence, AmbienceMeasureResult
+from src.data_model import SiloData # Removed AmbienceMeasureResult as it's not directly used for unique values
 
 def extract_unique_values():
     """
@@ -52,15 +52,17 @@ def extract_unique_values():
                     unique_reference_categories.add(ref['referenceCategory'])
                     unique_reference_modes.add(ref['referenceMode'])
 
-            # Ambience data
-            unique_cities.add(silo_data.ambience.geolocation.city)
-            unique_states.add(silo_data.ambience.geolocation.state)
-            unique_countries.add(silo_data.ambience.geolocation.country)
+            # Ambience data - check if ambience is not None
+            if silo_data.ambience:
+                unique_cities.add(silo_data.ambience.geolocation.city)
+                unique_states.add(silo_data.ambience.geolocation.state)
+                unique_countries.add(silo_data.ambience.geolocation.country)
 
-            for measure_result in silo_data.ambience.result:
-                unique_ambience_measures.add(measure_result.measure)
+                for measure_result in silo_data.ambience.result:
+                    unique_ambience_measures.add(measure_result.measure)
         else:
-            print(f"Skipping {file_path} due to loading or validation error.")
+            # The data_loader already prints an error message, so no need to repeat here
+            pass
 
     # Print results in Markdown format
     print("\n# Unique Values Extracted from Silo Data\n")
