@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional
 
 from src.utils.data_loader import load_silo_data
-from src.data_model import SiloData
+from src.data_model import SiloData, FeedDetail # Import FeedDetail
 
 def generate_consumption_dataset_v2():
     """
@@ -40,9 +40,17 @@ def generate_consumption_dataset_v2():
         preBatch_feedDelivery_total = 0.0
         for occurrence in silo_data.batch.batchOccurrenceList:
             if occurrence.type == 'feedDelivery' and occurrence.time < initial_date_ts:
+                # Assuming preBatch_feedDelivery_total comes from single value, not list
+                # If it can be a list too, this needs to be updated. For now, stick to scalar value.
                 if isinstance(occurrence.value, (int, float)):
                     preBatch_feedDelivery_total += float(occurrence.value)
-        
+                elif isinstance(occurrence.value, list): # Check for list of FeedDetail
+                    for item in occurrence.value:
+                        # Pydantic model will convert to FeedDetail, but direct dict access is safer here
+                        if isinstance(item, dict) and 'measured' in item and isinstance(item['measured'], (int, float)):
+                            preBatch_feedDelivery_total += float(item['measured'])
+
+
         # Aggregate daily consumption data
         daily_data: Dict[int, Dict[str, Any]] = {}
         has_relevant_data_in_file = False
@@ -64,31 +72,51 @@ def generate_consumption_dataset_v2():
                     "preBatch_feedDelivery_measured": preBatch_feedDelivery_total, # This will be the same for all rows of the same batch
                     "feedDelivery_measured": 0.0,
                     "feed_measured": 0.0,
-                    "feed_manual_measured": 0.0, # New field for manual feed
-                    "feed_measuredPerBird": 0.0, # Not directly available, setting to 0
-                    "siloEmptyTime": 0,          # Not directly available, setting to 0
-                    "siloNoConsumptionTime": 0   # Not directly available, setting to 0
+                    "feed_manual_measured": 0.0,
+                    "feed_measuredPerBird": 0.0,
+                    "siloEmptyTime": 0,
+                    "siloNoConsumptionTime": 0
                 }
 
-            if occurrence.type == 'feedDelivery' and isinstance(occurrence.value, (int, float)):
-                daily_data[batch_age]["feedDelivery_measured"] += float(occurrence.value)
-                has_relevant_data_in_file = True
-            elif occurrence.type == 'feedConsumption':
+            # Process feedDelivery
+            if occurrence.type == 'feedDelivery':
+                if isinstance(occurrence.value, (int, float)):
+                    daily_data[batch_age]["feedDelivery_measured"] += float(occurrence.value)
+                    has_relevant_data_in_file = True
+                elif isinstance(occurrence.value, list): # Now handling list of FeedDetail
+                    for item in occurrence.value:
+                        # Try to parse as FeedDetail; if it fails, it might be a different dict structure
+                        try:
+                            feed_detail = FeedDetail(**item)
+                            if feed_detail.measured is not None:
+                                daily_data[batch_age]["feedDelivery_measured"] += feed_detail.measured
+                            # Decide how to handle measuredPerBird and manual from feedDelivery here if needed
+                            # For now, let's assume they are mainly for 'feed' type or are aggregated under measured
+                        except Exception as e:
+                            print(f"Aviso: Não foi possível parsear item de feedDelivery como FeedDetail no arquivo {file_path}: {item}. Erro: {e}")
+                    has_relevant_data_in_file = True
+            
+            # Process feedConsumption (or 'feed' as user mentioned)
+            elif occurrence.type == 'feedConsumption' or occurrence.type == 'feed': # Assuming 'feed' type exists
                 if isinstance(occurrence.value, (int, float)):
                     daily_data[batch_age]["feed_measured"] += float(occurrence.value)
                     has_relevant_data_in_file = True
-                elif isinstance(occurrence.value, dict):
-                    # Check for 'measured' key for feed_measured
-                    if 'measured' in occurrence.value and isinstance(occurrence.value['measured'], (int, float)):
-                        daily_data[batch_age]["feed_measured"] += float(occurrence.value['measured'])
-                        has_relevant_data_in_file = True
-                    # Check for 'manual' key for feed_manual_measured
-                    if 'manual' in occurrence.value and isinstance(occurrence.value['manual'], (int, float)):
-                        daily_data[batch_age]["feed_manual_measured"] += float(occurrence.value['manual'])
-                        has_relevant_data_in_file = True
+                elif isinstance(occurrence.value, list): # Now handling list of FeedDetail
+                    for item in occurrence.value:
+                        try:
+                            feed_detail = FeedDetail(**item)
+                            if feed_detail.measured is not None:
+                                daily_data[batch_age]["feed_measured"] += feed_detail.measured
+                            if feed_detail.manual is not None:
+                                daily_data[batch_age]["feed_manual_measured"] += feed_detail.manual
+                            if feed_detail.measuredPerBird is not None:
+                                daily_data[batch_age]["feed_measuredPerBird"] += feed_detail.measuredPerBird # Aggregating per day, might need average or last value
+                        except Exception as e:
+                            print(f"Aviso: Não foi possível parsear item de feed/feedConsumption como FeedDetail no arquivo {file_path}: {item}. Erro: {e}")
+                    has_relevant_data_in_file = True
             
-            # Placeholder for feed_measuredPerBird, siloEmptyTime, siloNoConsumptionTime
-            # If "feed.measuredPerBird" referred to a specific occurrence type or derivation logic, it would be handled here.
+            # SiloEmptyTime and SiloNoConsumptionTime are not explicitly found as occurrence types.
+            # They would require specific occurrence types or complex derivation.
 
         if has_relevant_data_in_file or preBatch_feedDelivery_total > 0:
             for record in daily_data.values():
@@ -102,7 +130,7 @@ def generate_consumption_dataset_v2():
         df = df[[
             "environmentName", "batchName", "clientName", "batchAge",
             "preBatch_feedDelivery_measured",
-            "feedDelivery_measured", "feed_measured", "feed_manual_measured", # Added new field
+            "feedDelivery_measured", "feed_measured", "feed_manual_measured",
             "feed_measuredPerBird",
             "siloEmptyTime", "siloNoConsumptionTime"
         ]]
