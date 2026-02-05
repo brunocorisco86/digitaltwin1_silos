@@ -1,4 +1,4 @@
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union
 from pydantic import BaseModel, Field
 
 class ReferenceParam(BaseModel):
@@ -7,8 +7,8 @@ class ReferenceParam(BaseModel):
     lowerThresholdCritical: List[Optional[float]]
     upperThresholdModerate: List[Optional[float]]
     upperThresholdCritical: List[Optional[float]]
-    max: Optional[List[Optional[float]]] = None # Added for ambience references
-    min: Optional[List[Optional[float]]] = None # Added for ambience references
+    max: Optional[List[Optional[float]]] = None
+    min: Optional[List[Optional[float]]] = None
 
 class Reference(BaseModel):
     measure: str
@@ -33,29 +33,10 @@ class BatchOccurrenceValue(BaseModel):
 class BatchOccurrence(BaseModel):
     time: int
     type: str
-    value: Any # Can be str, int, float, or BatchOccurrenceValue
+    value: Any # Keep as Any as it can vary widely for other occurrence types
     batchOccurrenceId: str
     creation: int
     modified: int
-
-class Batch(BaseModel):
-    environmentId: str
-    name: str
-    initialDate: int
-    finalDate: int
-    batchDayCount: int
-    batchType: str
-    batchStatus: str
-    batchReferences: Dict[str, Any] # This is complex, keeping as dict for now
-    batchParam: Dict[str, Any]
-    batchOccurrenceList: List[BatchOccurrence]
-    batchTargetWeight: int
-    batchId: str
-    creation: int
-    modified: int
-    clientId: str
-    clientName: str
-    environmentName: str
 
 class Geolocation(BaseModel):
     autoRefresh: bool
@@ -66,9 +47,9 @@ class Geolocation(BaseModel):
     country: str
     latitude: float
     longitude: float
-    elevation: int
+    elevation: float
     utcOffset: int
-    ianaTimeZone: str
+    ianaTimeZone: Optional[str] = None
     lastModified: int
 
 class AmbienceResultDetail(BaseModel):
@@ -107,6 +88,89 @@ class Ambience(BaseModel):
     stop: int
     result: List[AmbienceMeasureResult]
 
+class Batch(BaseModel):
+    environmentId: str
+    name: str
+    initialDate: int
+    finalDate: int
+    batchDayCount: int
+    batchType: str
+    batchStatus: str
+    batchReferences: Dict[str, Any]
+    batchParam: Dict[str, Any]
+    batchOccurrenceList: List[BatchOccurrence]
+    batchTargetWeight: Optional[int] = None
+    batchId: str
+    creation: int
+    modified: int
+    clientId: str
+    clientName: str
+    environmentName: str
+
+# --- New Models for the top-level 'consumption' object ---
+class FeedMetrics(BaseModel):
+    reference: Optional[float] = None
+    referencePerBird: Optional[float] = None
+    manual: Optional[float] = None
+    manualPerBird: Optional[float] = None
+    measured: Optional[float] = None
+    measuredPerBird: Optional[float] = None
+
+class FeedDeliveryMetrics(BaseModel):
+    manual: Optional[float] = None
+    measured: Optional[float] = None
+    measuredByChannel: Optional[List[Dict[str, Any]]] = None # List of {"channel": int, "value": float}
+    numberOfDeliveriesManual: Optional[int] = None
+    numberOfDeliveriesMeasured: Optional[int] = None
+
+class GasDeliveryMetrics(BaseModel):
+    measured: Optional[float] = None
+    numberOfDeliveriesMeasured: Optional[int] = None
+
+class ConsumptionItem(BaseModel): # This is for items within the "preBatchInfo" and "result" lists
+    batchAge: int
+    start: int
+    stop: int
+    feed: Optional[FeedMetrics] = None
+    feedDelivery: Optional[FeedDeliveryMetrics] = None
+    gasDelivery: Optional[GasDeliveryMetrics] = None
+    siloEmptyTime: Optional[int] = None
+    siloNoConsumptionTime: Optional[int] = None
+
+class ConsumptionGeolocation(BaseModel):
+    autoRefresh: Optional[bool] = None
+    cityCode: Optional[int] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    region: Optional[str] = None
+    country: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    elevation: Optional[float] = None
+    utcOffset: Optional[int] = None
+    ianaTimeZone: Optional[str] = None
+    lastModified: Optional[int] = None
+
+class Consumption(BaseModel):
+    batchId: str
+    batchName: str
+    batchType: str
+    clientId: str
+    clientName: str
+    environmentId: str
+    environmentName: str
+    geolocation: Optional[ConsumptionGeolocation] = None
+    city: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    lastModified: int
+    start: int
+    stop: int
+    preBatchInfo: Optional[List[ConsumptionItem]] = Field(None, alias=", ")
+    result: List[ConsumptionItem]
+
+# Update SiloData model to include this new top-level "consumption"
 class SiloData(BaseModel):
     batch: Batch
-    ambience: Ambience
+    ambience: Union[Ambience, str, None]
+    consumption: Union[Consumption, str, None] = None # Allow Consumption object, string, or None

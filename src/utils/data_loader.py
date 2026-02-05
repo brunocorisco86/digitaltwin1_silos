@@ -4,7 +4,7 @@ from typing import Optional
 
 from pydantic import ValidationError
 
-from src.data_model import SiloData
+from src.data_model import SiloData # Ambience import removed as it's not needed directly here
 
 def load_silo_data(file_path: Path) -> Optional[SiloData]:
     """
@@ -23,6 +23,17 @@ def load_silo_data(file_path: Path) -> Optional[SiloData]:
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
+
+        # Explicitly handle the "no collectors" string for ambience
+        if isinstance(data.get('ambience'), str) and \
+           "no collectors" in data['ambience']:
+            data['ambience'] = None # Set to None if it's the error string
+
+        # Explicitly handle the "no collectors" string for consumption
+        if isinstance(data.get('consumption'), str) and \
+           "no collectors" in data['consumption']:
+            data['consumption'] = None # Set to None if it's the error string
+
         return SiloData(**data)
     except json.JSONDecodeError as e:
         print(f"Error decoding JSON from {file_path}: {e}")
@@ -33,4 +44,3 @@ def load_silo_data(file_path: Path) -> Optional[SiloData]:
     except Exception as e:
         print(f"An unexpected error occurred while reading {file_path}: {e}")
         return None
-
