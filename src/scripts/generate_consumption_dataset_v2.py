@@ -4,11 +4,12 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional
 
 from src.utils.data_loader import load_silo_data
-from src.data_model import SiloData, FeedDetail # Import FeedDetail
+from src.data_model import SiloData, Consumption, ConsumptionItem, FeedMetrics, FeedDeliveryMetrics # Import new models
 
 def generate_consumption_dataset_v2():
     """
-    Generates a CSV dataset with feed consumption data based on detailed specifications.
+    Generates a CSV dataset with feed consumption data based on detailed specifications
+    from the top-level 'consumption' object in the JSON files.
     The output CSV will be saved as 'dataset_consumo.csv' in /data/processed.
     """
     raw_data_dir = Path("data/raw")
@@ -27,102 +28,56 @@ def generate_consumption_dataset_v2():
 
     for file_path in json_files:
         silo_data: Optional[SiloData] = load_silo_data(file_path)
-        if not silo_data:
-            continue # Skip files that failed to load or validate
+        if not silo_data or not silo_data.consumption or not silo_data.consumption.result:
+            print(f"Aviso: Nenhum objeto 'consumption' válido ou 'consumption.result' encontrado no arquivo {file_path}. Pulando.")
+            continue # Skip files without a valid consumption object or empty result list
 
         environment_name = silo_data.batch.environmentName
         batch_name = silo_data.batch.name
         client_name = silo_data.batch.clientName
-        initial_date_ts = silo_data.batch.initialDate
-        initial_date_dt = datetime.fromtimestamp(initial_date_ts)
 
-        # Calculate preBatch_feedDelivery_measured for the entire batch
+        # Calculate preBatch_feedDelivery_measured from consumption.preBatchInfo
         preBatch_feedDelivery_total = 0.0
-        for occurrence in silo_data.batch.batchOccurrenceList:
-            if occurrence.type == 'feedDelivery' and occurrence.time < initial_date_ts:
-                # Assuming preBatch_feedDelivery_total comes from single value, not list
-                # If it can be a list too, this needs to be updated. For now, stick to scalar value.
-                if isinstance(occurrence.value, (int, float)):
-                    preBatch_feedDelivery_total += float(occurrence.value)
-                elif isinstance(occurrence.value, list): # Check for list of FeedDetail
-                    for item in occurrence.value:
-                        # Pydantic model will convert to FeedDetail, but direct dict access is safer here
-                        if isinstance(item, dict) and 'measured' in item and isinstance(item['measured'], (int, float)):
-                            preBatch_feedDelivery_total += float(item['measured'])
+        if silo_data.consumption.preBatchInfo:
+            for item in silo_data.consumption.preBatchInfo:
+                if item.feedDelivery and item.feedDelivery.measured is not None:
+                    preBatch_feedDelivery_total += item.feedDelivery.measured
+                # If preBatch_feedDelivery_measured should come from manual in preBatchInfo
+                # if item.feedDelivery and item.feedDelivery.manual is not None:
+                #     preBatch_feedDelivery_total += item.feedDelivery.manual
 
-
-        # Aggregate daily consumption data
-        daily_data: Dict[int, Dict[str, Any]] = {}
         has_relevant_data_in_file = False
 
-        for occurrence in silo_data.batch.batchOccurrenceList:
-            occurrence_dt = datetime.fromtimestamp(occurrence.time)
-            batch_age = (occurrence_dt - initial_date_dt).days
-
-            # Only consider occurrences within or after the batch started for daily aggregation
-            if batch_age < 0:
-                continue
-
-            if batch_age not in daily_data:
-                daily_data[batch_age] = {
-                    "environmentName": environment_name,
-                    "batchName": batch_name,
-                    "clientName": client_name,
-                    "batchAge": batch_age,
-                    "preBatch_feedDelivery_measured": preBatch_feedDelivery_total, # This will be the same for all rows of the same batch
-                    "feedDelivery_measured": 0.0,
-                    "feed_measured": 0.0,
-                    "feed_manual_measured": 0.0,
-                    "feed_measuredPerBird": 0.0,
-                    "siloEmptyTime": 0,
-                    "siloNoConsumptionTime": 0
-                }
-
-            # Process feedDelivery
-            if occurrence.type == 'feedDelivery':
-                if isinstance(occurrence.value, (int, float)):
-                    daily_data[batch_age]["feedDelivery_measured"] += float(occurrence.value)
-                    has_relevant_data_in_file = True
-                elif isinstance(occurrence.value, list): # Now handling list of FeedDetail
-                    for item in occurrence.value:
-                        # Try to parse as FeedDetail; if it fails, it might be a different dict structure
-                        try:
-                            feed_detail = FeedDetail(**item)
-                            if feed_detail.measured is not None:
-                                daily_data[batch_age]["feedDelivery_measured"] += feed_detail.measured
-                            # Decide how to handle measuredPerBird and manual from feedDelivery here if needed
-                            # For now, let's assume they are mainly for 'feed' type or are aggregated under measured
-                        except Exception as e:
-                            print(f"Aviso: Não foi possível parsear item de feedDelivery como FeedDetail no arquivo {file_path}: {item}. Erro: {e}")
-                    has_relevant_data_in_file = True
+        # Iterate through consumption.result directly for main data extraction
+        for consumption_item in silo_data.consumption.result:
+            record: Dict[str, Any] = {
+                "environmentName": environment_name,
+                "batchName": batch_name,
+                "clientName": client_name,
+                "batchAge": consumption_item.batchAge,
+                "preBatch_feedDelivery_measured": preBatch_feedDelivery_total,
+                "feedDelivery_measured": consumption_item.feedDelivery.measured if consumption_item.feedDelivery and consumption_item.feedDelivery.measured is not None else 0.0,
+                "feed_measured": consumption_item.feed.measured if consumption_item.feed and consumption_item.feed.measured is not None else 0.0,
+                "feed_manual_measured": consumption_item.feed.manual if consumption_item.feed and consumption_item.feed.manual is not None else 0.0,
+                "feed_measuredPerBird": consumption_item.feed.measuredPerBird if consumption_item.feed and consumption_item.feed.measuredPerBird is not None else 0.0,
+                "siloEmptyTime": consumption_item.siloEmptyTime if consumption_item.siloEmptyTime is not None else 0,
+                "siloNoConsumptionTime": consumption_item.siloNoConsumptionTime if consumption_item.siloNoConsumptionTime is not None else 0,
+            }
             
-            # Process feedConsumption (or 'feed' as user mentioned)
-            elif occurrence.type == 'feedConsumption' or occurrence.type == 'feed': # Assuming 'feed' type exists
-                if isinstance(occurrence.value, (int, float)):
-                    daily_data[batch_age]["feed_measured"] += float(occurrence.value)
-                    has_relevant_data_in_file = True
-                elif isinstance(occurrence.value, list): # Now handling list of FeedDetail
-                    for item in occurrence.value:
-                        try:
-                            feed_detail = FeedDetail(**item)
-                            if feed_detail.measured is not None:
-                                daily_data[batch_age]["feed_measured"] += feed_detail.measured
-                            if feed_detail.manual is not None:
-                                daily_data[batch_age]["feed_manual_measured"] += feed_detail.manual
-                            if feed_detail.measuredPerBird is not None:
-                                daily_data[batch_age]["feed_measuredPerBird"] += feed_detail.measuredPerBird # Aggregating per day, might need average or last value
-                        except Exception as e:
-                            print(f"Aviso: Não foi possível parsear item de feed/feedConsumption como FeedDetail no arquivo {file_path}: {item}. Erro: {e}")
-                    has_relevant_data_in_file = True
-            
-            # SiloEmptyTime and SiloNoConsumptionTime are not explicitly found as occurrence types.
-            # They would require specific occurrence types or complex derivation.
+            # If any of the main feed/feedDelivery values are present, consider it relevant
+            if record["feedDelivery_measured"] > 0 or \
+               record["feed_measured"] > 0 or \
+               record["feed_manual_measured"] > 0 or \
+               record["feed_measuredPerBird"] > 0 or \
+               record["siloEmptyTime"] > 0 or \
+               record["siloNoConsumptionTime"] > 0:
+                has_relevant_data_in_file = True
 
-        if has_relevant_data_in_file or preBatch_feedDelivery_total > 0:
-            for record in daily_data.values():
-                all_records.append(record)
-        else:
-            print(f"Aviso: Nenhum dado de consumo de ração relevante encontrado no arquivo {file_path}. Pulando.")
+            all_records.append(record)
+        
+        if not has_relevant_data_in_file and preBatch_feedDelivery_total == 0:
+            print(f"Aviso: Nenhum dado de consumo de ração relevante encontrado no objeto 'consumption' do arquivo {file_path}. Pulando.")
+
 
     if all_records:
         df = pd.DataFrame(all_records)
@@ -136,6 +91,7 @@ def generate_consumption_dataset_v2():
         ]]
         
         # Fill NaN values with 0 for statistical convenience as requested
+        # Note: Pydantic models already ensure None for missing fields, then fillna makes them 0
         df = df.fillna(0)
         
         df.to_csv(output_csv_path, sep=';', index=False)
