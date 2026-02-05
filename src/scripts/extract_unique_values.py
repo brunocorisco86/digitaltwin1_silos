@@ -3,18 +3,18 @@ from typing import Set, Dict, Optional
 import json
 
 from src.utils.data_loader import load_silo_data
-from src.data_model import SiloData # Removed AmbienceMeasureResult as it's not directly used for unique values
+from src.data_model import SiloData
 
 def extract_unique_values():
     """
     Extracts unique values for key fields from all silo data JSON files
-    and prints them in Markdown format.
+    and prints them in Markdown format (pt-br).
     """
     raw_data_dir = Path("data/raw")
     json_files = list(raw_data_dir.glob("*.json"))
 
     if not json_files:
-        print(f"No JSON files found in {raw_data_dir}. Exiting.")
+        print(f"Nenhum arquivo JSON encontrado em {raw_data_dir}. Saindo.")
         return
 
     unique_batch_types: Set[str] = set()
@@ -31,7 +31,7 @@ def extract_unique_values():
     unique_reference_categories: Set[str] = set()
     unique_reference_modes: Set[str] = set()
 
-    print(f"Processing {len(json_files)} JSON files...")
+    print(f"Processando {len(json_files)} arquivos JSON...")
 
     for file_path in json_files:
         silo_data: Optional[SiloData] = load_silo_data(file_path)
@@ -64,27 +64,27 @@ def extract_unique_values():
             # The data_loader already prints an error message, so no need to repeat here
             pass
 
-    # Print results in Markdown format
-    print("\n# Unique Values Extracted from Silo Data\n")
+    # Print results in Markdown format (pt-br)
+    print("\n# Valores Únicos Extraídos dos Dados do Silo\n")
 
-    print("## Batch Information")
-    print(f"- **Batch Types:** {', '.join(sorted(list(unique_batch_types)))}")
-    print(f"- **Batch Statuses:** {', '.join(sorted(list(unique_batch_statuses)))}")
-    print(f"- **Client Names:** {', '.join(sorted(list(unique_client_names)))}")
-    print(f"- **Environment Names:** {', '.join(sorted(list(unique_environment_names)))}")
-    print(f"- **Batch Occurrence Types:** {', '.join(sorted(list(unique_occurrence_types)))}")
+    print("## Informações do Lote")
+    print(f"- **Tipos de Lote:** {', '.join(sorted(list(unique_batch_types)))}")
+    print(f"- **Status do Lote:** {', '.join(sorted(list(unique_batch_statuses)))}")
+    print(f"- **Nomes dos Clientes:** {', '.join(sorted(list(unique_client_names)))}")
+    print(f"- **Nomes dos Ambientes:** {', '.join(sorted(list(unique_environment_names)))}")
+    print(f"- **Tipos de Ocorrência do Lote:** {', '.join(sorted(list(unique_occurrence_types)))}")
     
-    print("\n## Batch References")
-    print(f"- **Reference Measures:** {', '.join(sorted(list(unique_reference_measures)))}")
-    print(f"- **Reference Types:** {', '.join(sorted(list(unique_reference_types)))}")
-    print(f"- **Reference Categories:** {', '.join(sorted(list(unique_reference_categories)))}")
-    print(f"- **Reference Modes:** {', '.join(sorted(list(unique_reference_modes)))}")
+    print("\n## Referências do Lote")
+    print(f"- **Medidas de Referência:** {', '.join(sorted(list(unique_reference_measures)))}")
+    print(f"- **Tipos de Referência:** {', '.join(sorted(list(unique_reference_types)))}")
+    print(f"- **Categorias de Referência:** {', '.join(sorted(list(unique_reference_categories)))}")
+    print(f"- **Modos de Referência:** {', '.join(sorted(list(unique_reference_modes)))}")
 
-    print("\n## Ambience Information")
-    print(f"- **Cities:** {', '.join(sorted(list(unique_cities)))}")
-    print(f"- **States:** {', '.join(sorted(list(unique_states)))}")
-    print(f"- **Countries:** {', '.join(sorted(list(unique_countries)))}")
-    print(f"- **Ambience Measures:** {', '.join(sorted(list(unique_ambience_measures)))}")
+    print("\n## Informações de Ambiente")
+    print(f"- **Cidades:** {', '.join(sorted(list(unique_cities)))}")
+    print(f"- **Estados:** {', '.join(sorted(list(unique_states)))}")
+    print(f"- **Países:** {', '.join(sorted(list(unique_countries)))}")
+    print(f"- **Medidas de Ambiente:** {', '.join(sorted(list(unique_ambience_measures)))}")
 
 
 if __name__ == "__main__":
