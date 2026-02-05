@@ -77,9 +77,15 @@ def generate_consumption_dataset_v2():
                 if isinstance(occurrence.value, (int, float)):
                     daily_data[batch_age]["feed_measured"] += float(occurrence.value)
                     has_relevant_data_in_file = True
-                elif isinstance(occurrence.value, dict) and 'manual' in occurrence.value and isinstance(occurrence.value['manual'], (int, float)):
-                    daily_data[batch_age]["feed_manual_measured"] += float(occurrence.value['manual'])
-                    has_relevant_data_in_file = True
+                elif isinstance(occurrence.value, dict):
+                    # Check for 'measured' key for feed_measured
+                    if 'measured' in occurrence.value and isinstance(occurrence.value['measured'], (int, float)):
+                        daily_data[batch_age]["feed_measured"] += float(occurrence.value['measured'])
+                        has_relevant_data_in_file = True
+                    # Check for 'manual' key for feed_manual_measured
+                    if 'manual' in occurrence.value and isinstance(occurrence.value['manual'], (int, float)):
+                        daily_data[batch_age]["feed_manual_measured"] += float(occurrence.value['manual'])
+                        has_relevant_data_in_file = True
             
             # Placeholder for feed_measuredPerBird, siloEmptyTime, siloNoConsumptionTime
             # If "feed.measuredPerBird" referred to a specific occurrence type or derivation logic, it would be handled here.
