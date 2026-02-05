@@ -64,6 +64,7 @@ def generate_consumption_dataset_v2():
                     "preBatch_feedDelivery_measured": preBatch_feedDelivery_total, # This will be the same for all rows of the same batch
                     "feedDelivery_measured": 0.0,
                     "feed_measured": 0.0,
+                    "feed_manual_measured": 0.0, # New field for manual feed
                     "feed_measuredPerBird": 0.0, # Not directly available, setting to 0
                     "siloEmptyTime": 0,          # Not directly available, setting to 0
                     "siloNoConsumptionTime": 0   # Not directly available, setting to 0
@@ -72,12 +73,16 @@ def generate_consumption_dataset_v2():
             if occurrence.type == 'feedDelivery' and isinstance(occurrence.value, (int, float)):
                 daily_data[batch_age]["feedDelivery_measured"] += float(occurrence.value)
                 has_relevant_data_in_file = True
-            elif occurrence.type == 'feedConsumption' and isinstance(occurrence.value, (int, float)):
-                daily_data[batch_age]["feed_measured"] += float(occurrence.value)
-                has_relevant_data_in_file = True
+            elif occurrence.type == 'feedConsumption':
+                if isinstance(occurrence.value, (int, float)):
+                    daily_data[batch_age]["feed_measured"] += float(occurrence.value)
+                    has_relevant_data_in_file = True
+                elif isinstance(occurrence.value, dict) and 'manual' in occurrence.value and isinstance(occurrence.value['manual'], (int, float)):
+                    daily_data[batch_age]["feed_manual_measured"] += float(occurrence.value['manual'])
+                    has_relevant_data_in_file = True
             
-            # If "feed.measuredPerBird" referred to a specific occurrence type, it would be handled here.
-            # Assuming for now it's not a direct occurrence type value.
+            # Placeholder for feed_measuredPerBird, siloEmptyTime, siloNoConsumptionTime
+            # If "feed.measuredPerBird" referred to a specific occurrence type or derivation logic, it would be handled here.
 
         if has_relevant_data_in_file or preBatch_feedDelivery_total > 0:
             for record in daily_data.values():
@@ -91,7 +96,8 @@ def generate_consumption_dataset_v2():
         df = df[[
             "environmentName", "batchName", "clientName", "batchAge",
             "preBatch_feedDelivery_measured",
-            "feedDelivery_measured", "feed_measured", "feed_measuredPerBird",
+            "feedDelivery_measured", "feed_measured", "feed_manual_measured", # Added new field
+            "feed_measuredPerBird",
             "siloEmptyTime", "siloNoConsumptionTime"
         ]]
         
