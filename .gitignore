@@ -4,7 +4,8 @@
 data/processed/cluster_aviarios_processado.csv
 data/processed/ConsumoRacaoLinhagens.csv
 data/processed/microrregioes.csv
-data/processed/predicted_consumption_per_bird.csv
+# O resultado do modelo está em:
+# data/processed/predicted_consumption_per_bird.csv
 data/processed/cluster_aviarios_encoded.csv
 # Generated Plots
 images/plots/*.png
