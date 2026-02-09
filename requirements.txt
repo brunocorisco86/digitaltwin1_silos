@@ -1,5 +1,5 @@
-pydantic
 pandas
 scikit-learn
 matplotlib
 seaborn
+tabulate

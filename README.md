@@ -1,65 +1,78 @@
-# Análise e ETL para Gêmeo Digital de Consumo de Ração em Silos
+# Gêmeo Digital de Consumo de Ração em Silos
 
 ## 1. Visão Geral do Projeto
 
-Este projeto tem como objetivo principal a análise e o processamento de dados para o desenvolvimento de um **Gêmeo Digital** focado na estimativa da taxa de esvaziamento de silos em aviários. Utilizando técnicas de Machine Learning, o sistema visa converter dados zootécnicos e estruturais em previsões de estoque, otimizando a logística e promovendo o bem-estar animal, conforme a visão geral da base de conhecimento do Projeto AgroCenter (C.Vale).
+Este projeto desenvolve um **Gêmeo Digital** para estimar a taxa de esvaziamento de silos em aviários que não possuem sensores físicos. Utilizando um modelo de Machine Learning (Random Forest Regressor), o sistema prevê o consumo de ração por ave por dia (`feed_measuredPerBird`) para cada `batchAge` (idade do lote) e `Aviario`. O objetivo é otimizar a logística, melhorar o monitoramento e promover o bem-estar animal, integrando dados zootécnicos e estruturais.
 
-## 2. Pipeline de Dados (Foco do Desenvolvimento Atual: ETL)
+O projeto gera previsões suavizadas de consumo, e diversas visualizações para analisar o comportamento da ração, incluindo curvas de consumo por cluster, boxplots de distribuição por idade e gráficos da mediana de consumo agrupados por cluster e por faixas de pontuação máxima (`PontuacaoMax`).
 
-O desenvolvimento atual concentra-se na fase de **Processamento & Feature Engineering**, especificamente na construção de um pipeline de ETL (Extração, Transformação e Carga) robusto para dados de consumo de ração.
+## 2. Pipeline de Análise e Previsão
 
-### Fases do Pipeline ETL Implementado:
+O pipeline de dados e análise é projetado para processar dados brutos, treinar um modelo preditivo e gerar visualizações e relatórios. Para detalhes técnicos completos sobre a preparação de dados, critérios de filtragem, premissas e o fluxo de execução, consulte o documento de conhecimento detalhado: [`knowledge/consumption_prediction_process.md`](knowledge/consumption_prediction_process.md).
 
-1.  **Extração de Dados Brutos (`DataExtractor`)**:
-    *   **Origem**: Arquivos JSON brutos localizados em `/data/raw/`, nomeados no padrão `AVIARIO XXX - Lote YYY - GUID.json`.
-    *   **Processo**: Os JSONs são lidos e parseados utilizando modelos Pydantic (`src/data_model.py`) e um carregador dedicado (`src/utils/data_loader.py`).
-    *   **Resultado**: Consolidação dos dados relevantes (e.g., `environmentName`, `batchName`, `batchAge`, `feed_measuredPerBird`) em um DataFrame inicial.
+### 2.1. Preparação e Filtragem de Dados
 
-2.  **Processamento e Filtragem Inicial (`ETLProcessor`)**:
-    *   **Limpeza e Transformação**:
-        *   Remoção dos prefixos "AVIARIO " de `environmentName` e "Lote " de `batchName`, convertendo-os para inteiros.
-        *   Criação da coluna `loteComposto` (concatenação de `environmentName` e `batchName`, e posicionada como a terceira coluna).
-    *   **Filtragem por `feed_measuredPerBird`**: Manutenção apenas de registros onde `feed_measuredPerBird` está entre **15 e 250 (inclusive)**.
-    *   **Filtragem por Contagem de `loteComposto`**: Lotes compostos com **menos de 15 registros** após o filtro de `feed_measuredPerBird` são descartados.
+A fase de preparação envolve a limpeza e transformação rigorosa dos dados. Para garantir a qualidade dos dados para o treinamento do modelo, foram aplicadas filtragens baseadas em:
+*   **`confidence_level`**: Somente registros com `confidence_level >= 0.8` são considerados, focando em medições de alta fidelidade.
+*   **`IEPMedian`**: Outliers são removidos, mantendo valores de `IEPMedian` entre 200 e 500 para mitigar o impacto de problemas sanitários atípicos.
+*   Mais detalhes sobre as regras de filtragem podem ser encontrados em [`knowledge/consumption_prediction_process.md`](knowledge/consumption_prediction_process.md).
 
-3.  **Filtragem por Comportamento Inicial/Final de Consumo (`ETLProcessor`)**:
-    *   **Critério**: Lotes compostos são mantidos se o `feed_measuredPerBird` na **idade mínima do lote** estiver entre **0 e 50**, E o `feed_measuredPerBird` na **idade máxima do lote** estiver entre **150 e 250**. Lotes que não atendem a ambos os critérios são removidos.
+### 2.2. Features e Variável Alvo
 
-4.  **Modelagem da Curva e Cálculo de Confiança (`CurveModeler`)**:
-    *   **Curva de Consumo**: Para cada `loteComposto`, uma regressão polinomial de grau 2 é ajustada para modelar a relação entre `feed_measuredPerBird` e `batchAge`.
-    *   **Nível de Confiança**: O Coeficiente de Determinação ($R^2$) do modelo ajustado é calculado e adicionado como uma coluna `confidence_level` ao dataset.
+O modelo foi treinado para prever `feed_measuredPerBird`. As principais features utilizadas são:
+*   `AreaAlojamento_Encoded`
+*   `batchAge`
+*   `ClassifCluster`
+*   `PontuacaoMax`
+*   `IEPMedian`
 
-5.  **Filtragem por Nível de Confiança ($R^2$) (`ETLProcessor`)**:
-    *   **Critério**: Lotes compostos são mantidos apenas se o seu `confidence_level` (R²) for **maior ou igual a 0.80**.
+### 2.3. Modelo e Avaliação de Desempenho
 
-6.  **Agregação do Consumo por Ave (`Aggregator`)**:
-    *   **Processo**: Calcula-se o somatório total de `feed_measuredPerBird` para cada `loteComposto`, agregando o consumo por ave ao longo de todas as idades do lote.
-    *   **Resultado**: O resultado é salvo em um novo arquivo `aggregated_consumption_per_bird.csv` em `/data/processed/`.
+Um modelo `RandomForestRegressor` foi utilizado com sucesso para prever o consumo. Sua robustez foi confirmada através de validação cruzada e avaliação por clusters.
 
-7.  **Salvamento dos Dados Processados (`ETLProcessor`)**:
-    *   O DataFrame final, após todas as etapas de filtragem e enriquecimento, é salvo em `/data/processed/dataset_consumo_processed.csv`.
+*   **Validação Cruzada (K-Fold)**: O modelo alcançou um **Mean Absolute Error (MAE) médio de 14.78 (+/- 0.75)**. Este resultado indica a boa capacidade de generalização do modelo em dados não vistos.
+*   **Importância das Features**: A análise de importância das features revelou que `batchAge` é a variável mais influente na previsão do consumo. O ranking completo das features é:
+    | Feature                |   Importance |
+    |:-----------------------|-------------:|
+    | batchAge               |    0.943345  |
+    | IEPMedian              |    0.0263203 |
+    | AreaAlojamento_Encoded |    0.0145208 |
+    | PontuacaoMax           |    0.0103588 |
+    | ClassifCluster         |    0.0054555 |
+*   **Métrica de Erro (MAE) por Cluster**: A avaliação segmentada por clusters mostrou as seguintes performances:
+    | Cluster          |     MAE |
+    |:-----------------|--------:|
+    | Críticos         |  4.0091 |
+    | Alta Performance |  7.9977 |
+    | Manejo de Ouro   | 10.3162 |
+    | Subutilizados    | 10.6978 |
+    Para mais detalhes sobre as métricas, consulte: [`reports/report.md`](reports/report.md).
 
-8.  **Geração de Visualização (`Plotter`)**:
-    *   **Gráfico**: Gera um plot das curvas de consumo (`feed_measuredPerBird` vs `batchAge`) para os `loteComposto`s que sobreviveram aos filtros.
-    *   **Coloração**: As curvas são coloridas com base no `confidence_level` (R²):
-        *   `< 0.90`: Vermelho
-        *   `0.90 <= R² < 0.95`: Verde
-        *   `0.95 <= R² < 1.00`: Azul
-        *   `R² = 1.00`: Roxo (ou aproximadamente 1.00)
-    *   **Suavização**: As curvas são suavizadas através de regressão polinomial (grau 2).
-    *   **Legenda**: Inclui legendas apenas para os níveis de confiança.
-    *   **Local**: O plot é salvo em `/images/plots/curvas_consumo_new.png`.
+### 2.4. Geração de Previsões e Visualizações
 
-## 3. Estrutura Orientada a Objetos (OOP)
+O pipeline gera previsões suavizadas e uma série de gráficos para análise aprofundada:
+*   **Curvas de Consumo Suavizadas (Global)**: `images/plots/smoothed_consumption_curves_per_aviario.png`
+*   **Curvas de Consumo Suavizadas (Por Cluster)**: `images/plots/smoothed_consumption_curves_<Nome_do_Cluster>.png` (e.g., para 'Manejo de Ouro', 'Subutilizados', 'Críticos', 'Alta Performance')
+*   **Boxplot de Consumo por Idade do Lote**: `images/plots/consumption_boxplot_per_batchage.png`
+*   **Mediana do Consumo por Idade do Lote e Cluster**: `images/plots/median_consumption_by_batchage_per_cluster.png`
+*   **Mediana do Consumo por Idade do Lote e Grupo de Pontuação Máxima**: `images/plots/median_consumption_by_batchage_per_pontuacaomax_bin.png`
 
-O pipeline foi refatorado para uma estrutura orientada a objetos (OOP) para melhorar a modularidade, reusabilidade e manutenção do código.
+## 3. Estrutura do Projeto
 
-*   **`main.py`**: Orquestra todo o fluxo, sequenciando as etapas de Extração, Processamento/Filtragem, Modelagem e Geração de Plots.
-*   **`src/data_extractor.py` (`DataExtractor`)**: Responsável pela extração inicial dos dados brutos de JSON e sua conversão para DataFrame.
-*   **`src/etl_processor.py` (`ETLProcessor`)**: Encapsula as lógicas de limpeza, transformação e todos os filtros baseados nas regras de negócio (e.g., range `feed_measuredPerBird`, contagem de `loteComposto`, filtro inicial/final, filtro por R²).
-*   **`src/curve_modeler.py` (`CurveModeler`)**: Contém a lógica para ajuste das curvas de consumo (`batchAge` vs `feed_measuredPerBird`) e cálculo do `confidence_level` (R²).
-*   **`src/aggregator.py` (`Aggregator`)**: Realiza a agregação do consumo total de ração por ave para cada `loteComposto`.
-*   **`src/plotter.py` (`Plotter`)**: Responsável pela geração e salvamento dos gráficos de consumo.
+O projeto é organizado em módulos Python para modularidade e reusabilidade:
+
+*   **`main.py`**: (Atualmente não utilizado para o fluxo de ML) Pode ser refatorado para orquestrar o pipeline completo.
+*   **`src/analyze_silo_data.py`**: Contém a lógica para treinar o modelo `RandomForestRegressor`, extrair importância das features e realizar a avaliação por cluster e validação cruzada.
+*   **`src/predict_consumption.py`**: Gera as previsões de consumo de ração com base no modelo treinado, aplica suavização e salva os resultados.
+*   **`src/plot_consumption_curves.py`**: Gera as curvas de consumo suavizadas (globais e por cluster).
+*   **`src/plot_consumption_boxplot.py`**: Gera boxplots da distribuição do consumo por idade do lote.
+*   **`src/plot_median_consumption_by_cluster.py`**: Gera gráficos de linha da mediana de consumo por idade do lote e cluster.
+*   **`src/plot_median_consumption_by_pontuacaomax_bins.py`**: Gera gráficos de linha da mediana de consumo por idade do lote e grupos de `PontuacaoMax`.
+*   **`data/processed/predicted_consumption_per_bird.csv`**: Arquivo CSV principal contendo as previsões de consumo.
+*   **`images/plots/`**: Diretório onde todos os gráficos gerados são salvos.
+*   **`reports/report.md`**: Relatório detalhado do desempenho do modelo, métricas e validação cruzada.
+*   **`reports/feature_importances.md`**: Ranking de importância das features do modelo.
+*   **`knowledge/consumption_prediction_process.md`**: Documentação técnica aprofundada do pipeline.
 
 ## 4. Tech Stack
 
@@ -67,14 +80,15 @@ O pipeline foi refatorado para uma estrutura orientada a objetos (OOP) para melh
 *   **Ambiente Dev**: Pop_OS! / Windows 11 (com Docker)
 *   **Bibliotecas Core**:
     *   `pandas` & `numpy`: Manipulação de dados.
-    *   `scikit-learn`: Regressão Polinomial, Métricas (R²).
+    *   `scikit-learn`: Modelagem (RandomForestRegressor), Métricas (MAE, R²).
     *   `matplotlib` & `seaborn`: Visualização de dados.
-    *   `pydantic`: Validação de modelos de dados (utilizado em `src/data_model.py` e `src/utils/data_loader.py`).
+    *   `tabulate`: Geração de tabelas formatadas em Markdown.
+    *   `pydantic`: Validação de modelos de dados (utilizado na fase de ETL inicial, embora não diretamente nos scripts de ML atuais).
 *   **Ambiente Virtual**: `.venv`
 
 ## 5. Como Executar
 
-Para executar o pipeline completo:
+Para replicar os resultados ou gerar novas análises:
 
 1.  **Garanta o ambiente virtual**:
     ```bash
@@ -85,25 +99,15 @@ Para executar o pipeline completo:
     ```bash
     .venv/bin/python3 -m pip install -r requirements.txt
     ```
-3.  **Execute o script principal**:
+3.  **Execute os scripts de análise e visualização**:
+    Para gerar as previsões e os plots, execute os seguintes scripts na ordem:
     ```bash
-    .venv/bin/python3 main.py
+    .venv/bin/python3 src/predict_consumption.py
+    .venv/bin/python3 src/plot_consumption_curves.py
+    .venv/bin/python3 src/plot_consumption_boxplot.py
+    .venv/bin/python3 src/plot_median_consumption_by_cluster.py
+    .venv/bin/python3 src/plot_median_consumption_by_pontuacaomax_bins.py
     ```
-
-O script irá processar os dados, gerar o arquivo CSV processado, o arquivo CSV agregado e salvar o plot da curva de consumo em `images/plots/curvas_consumo_new.png`.
-
-## 6. Premissas e Regras de Negócio (Consolidadas)
-
-Para a construção e refinamento do Gêmeo Digital, as seguintes premissas e regras foram consolidadas:
-
-*   **Score de Manejo**: (Mortalidade 7d, Mortalidade Total, CA Ajustada, % Condenação) - *Conforme base de conhecimento.*
-*   **Target Encoding**: Microrregião (80+ regiões resumidas pelo impacto no IEP) - *Conforme base de conhecimento.*
-*   **Clustering (K-Means)**: Classificação dos aviários nos 4 quadrantes de eficiência (Alta Performance, Manejo de Ouro, Subutilizados, Críticos), com normalização (`StandardScaler`) obrigatória antes do K-Means e seleção de K=4 - *Conforme base de conhecimento.*
-*   **Algoritmo Principal**: Random Forest Regressor para a taxa de esvaziamento diária (kg/dia) - *Conforme base de conhecimento.*
-*   **Filtragem de `feed_measuredPerBird`**: Registros devem ter `feed_measuredPerBird` entre **15 e 250 (inclusive)**.
-*   **Filtragem por Contagem Mínima de `loteComposto`**: Lotes compostos devem ter **no mínimo 15 registros** após o filtro de `feed_measuredPerBird`.
-*   **Filtragem por Comportamento Inicial/Final de Consumo**: Lotes compostos são mantidos se o `feed_measuredPerBird` na **idade mínima do lote** estiver entre **0 e 50**, E na **idade máxima do lote** estiver entre **150 e 250**.
-*   **Filtragem por Nível de Confiança ($R^2$)**: Lotes compostos são mantidos apenas se o seu `confidence_level` (R²) for **maior ou igual a 0.80**.
-*   **Outliers (IEP)**: Valores de IEP abaixo de 200 ou acima de 500 devem ser sinalizados para conferência (possíveis erros de lançamento ou crises sanitárias) - *Conforme base de conhecimento.*
+    Os relatórios de texto (`reports/report.md` e `reports/feature_importances.md`) são gerados como parte da execução de `predict_consumption.py` (via `analyze_silo_data.py`).
 
 ---
