@@ -8,7 +8,7 @@ data/processed/microrregioes.csv
 # data/processed/predicted_consumption_per_bird.csv
 data/processed/cluster_aviarios_encoded.csv
 # Generated Plots
-images/plots/*.png
+# images/plots/*.png
 # Generated Reports
 reports/report.md
 reports/feature_importances.md
